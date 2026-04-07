@@ -2,6 +2,11 @@ import http.server
 import socketserver
 import webbrowser
 import os
+import threading
+import shutil
+
+print("GF3D 1.0.1")
+print("GF3D is part of and developed from Xyteorize Games")
 
 class GF3D:
     def __init__(self):
@@ -40,20 +45,12 @@ class GF3D:
     def attach_script(self, url):
         self.external_scripts.append(f'<script src="{url}"></script>')
 
-    def load_plugin(self, file_path):
-        if file_path.endswith('.js'):
-            self.attach_script(file_path)
-        elif file_path.endswith('.py'):
-            with open(file_path, 'r') as f:
-                self.add_custom_js(f.read())
-        elif file_path.endswith('.glsl'):
-            with open(file_path, 'r') as f:
-                self.add_custom_js(f.read())
-
-    def _generate_html(self):
+    def _generate_html(self, title, icon_path):
         components = "\n                ".join(self.nodes)
         updates = "\n                    ".join(self.animations)
         scripts = "\n        ".join(self.external_scripts)
+        
+        icon_tag = f'<link rel="icon" href="{icon_path}">' if icon_path else ""
         
         shader_js = ""
         for s_id, code in self.shaders.items():
@@ -64,7 +61,8 @@ class GF3D:
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Gameflow3D Pro</title>
+            <title>{title}</title>
+            {icon_tag}
             <style>body {{ margin: 0; overflow: hidden; background: #000; }}</style>
             {scripts}
             <script type="importmap">
@@ -82,9 +80,10 @@ class GF3D:
                 import {{ TransformControls }} from 'three/addons/controls/TransformControls.js';
                 import {{ OrbitControls }} from 'three/addons/controls/OrbitControls.js';
                 import {{ GLTFLoader }} from 'three/addons/loaders/GLTFLoader.js';
+                import {{ FBXLoader }} from 'three/addons/loaders/FBXLoader.js';
 
                 const scene = new THREE.Scene();
-                const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+                const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
                 const renderer = new THREE.WebGLRenderer({{ antialias: true }});
                 const clock = new THREE.Clock();
                 const mixers = []; 
@@ -94,13 +93,27 @@ class GF3D:
                 document.body.appendChild(renderer.domElement);
                 camera.position.set(5, 5, 5);
 
+                window.playAnimation = (object, clipName = "mixamo.com") => {{
+                    if (object.animations && object.animations.length > 0) {{
+                        const mixer = new THREE.AnimationMixer(object);
+                        const clip = object.animations.find(a => a.name.includes(clipName)) || object.animations[0];
+                        const action = mixer.clipAction(clip);
+                        action.play();
+                        mixers.push(mixer);
+                        return mixer;
+                    }}
+                    return null;
+                }};
+
                 {shader_js}
                 {components}
 
                 function animate() {{
                     requestAnimationFrame(animate);
                     const delta = clock.getDelta();
-                    mixers.forEach(m => m.update(delta));
+                    
+                    mixers.forEach(mixer => mixer.update(delta));
+                    
                     if (typeof orbit !== 'undefined') orbit.update();
                     {updates}
                     renderer.render(scene, camera);
@@ -112,17 +125,48 @@ class GF3D:
                     camera.updateProjectionMatrix();
                     renderer.setSize(window.innerWidth, window.innerHeight);
                 }});
+                
+                window.mixers = mixers;
+                window.THREE = THREE;
             </script>
         </body>
         </html>
         """
 
-    def run(self, port=8080):
-        if not os.path.exists("build"): os.makedirs("build")
-        with open("build/index.html", "w") as f: f.write(self._generate_html())
+    def run(self, port=8080, use_window=False, title="GF3D Engine", icon=None, fullscreen=False):
+        if not os.path.exists("build"): 
+            os.makedirs("build")
+        
+        if os.path.exists("assets"):
+            dest_assets = os.path.join("build", "assets")
+            if os.path.exists(dest_assets):
+                shutil.rmtree(dest_assets)
+            shutil.copytree("assets", dest_assets)
+            print(f"[*] Assets synced to build/assets")
+
+        icon_filename = None
+        if icon and os.path.exists(icon):
+            icon_filename = os.path.basename(icon)
+            shutil.copy(icon, f"build/{icon_filename}")
+
+        with open("build/index.html", "w") as f: 
+            f.write(self._generate_html(title, icon_filename))
+        
         os.chdir("build")
         socketserver.TCPServer.allow_reuse_address = True
-        with socketserver.TCPServer(("", port), http.server.SimpleHTTPRequestHandler) as httpd:
-            webbrowser.open(f"http://localhost:{port}")
-            try: httpd.serve_forever()
-            except KeyboardInterrupt: httpd.shutdown()
+        httpd = socketserver.TCPServer(("", port), http.server.SimpleHTTPRequestHandler)
+        
+        url = f"http://localhost:{port}"
+        
+        if use_window:
+            import webview
+            server_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+            server_thread.start()
+            webview.create_window(title, url, width=1280, height=720, fullscreen=fullscreen)
+            webview.start()
+        else:
+            webbrowser.open(url)
+            try:
+                httpd.serve_forever()
+            except KeyboardInterrupt:
+                httpd.shutdown()
