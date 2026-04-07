@@ -1,0 +1,8 @@
+{
+  "name": "gameflow3d-runtime",
+  "version": "1.0.0",
+  "description": "Runtime for GF3D",
+  "dependencies": {
+    "three": "^0.160.0"
+  }
+}
