@@ -6,6 +6,9 @@
 
 Gameflow3D is a python game engine/framework for building cross platform games (Android/IOS/Windows/Mac/Linux)
 
+<img width="1364" height="767" alt="Screenshot 2026-04-07 154431" src="https://github.com/user-attachments/assets/cc332305-5dde-4a50-9ff0-0fed149e9648" />
+
+
 # Installation
 
 Download from the releases and click ```gf3dInstall-1.0.0-win.exe``` or ```gf3dInstall-1.0.0-macnlin.sh```
