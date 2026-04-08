@@ -49,9 +49,7 @@ class GF3D:
         components = "\n                ".join(self.nodes)
         updates = "\n                    ".join(self.animations)
         scripts = "\n        ".join(self.external_scripts)
-        
         icon_tag = f'<link rel="icon" href="{icon_path}">' if icon_path else ""
-        
         shader_js = ""
         for s_id, code in self.shaders.items():
             shader_js += f"const {s_id}_vert = `{code['vert']}`;\n"
@@ -68,8 +66,8 @@ class GF3D:
             <script type="importmap">
                 {{
                     "imports": {{
-                        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+                        "three": "/node_modules/three/build/three.module.js",
+                        "three/addons/": "/node_modules/three/examples/jsm/"
                     }}
                 }}
             </script>
@@ -111,9 +109,7 @@ class GF3D:
                 function animate() {{
                     requestAnimationFrame(animate);
                     const delta = clock.getDelta();
-                    
                     mixers.forEach(mixer => mixer.update(delta));
-                    
                     if (typeof orbit !== 'undefined') orbit.update();
                     {updates}
                     renderer.render(scene, camera);
@@ -139,10 +135,27 @@ class GF3D:
         
         if os.path.exists("assets"):
             dest_assets = os.path.join("build", "assets")
-            if os.path.exists(dest_assets):
-                shutil.rmtree(dest_assets)
+            if os.path.exists(dest_assets): shutil.rmtree(dest_assets)
             shutil.copytree("assets", dest_assets)
             print(f"[*] Assets synced to build/assets")
+
+        dest_modules = os.path.join("build", "node_modules")
+        if not os.path.exists(dest_modules):
+            lib_path = os.path.dirname(__file__)
+            local_node = os.path.join(lib_path, "node_modules")
+            root_node = "node_modules"
+            source = root_node if os.path.exists(root_node) else local_node
+            
+            if os.path.exists(source):
+                try:
+                    shutil.copytree(source, dest_modules)
+                    print(f"[*] node_modules synced to build/")
+                except Exception as e:
+                    print(f"[!] Sync error: {e}")
+            else:
+                print("[!] Error: node_modules not found!")
+        else:
+            print("[*] node_modules already exists in build/. Skipping copy.")
 
         icon_filename = None
         if icon and os.path.exists(icon):
@@ -153,9 +166,19 @@ class GF3D:
             f.write(self._generate_html(title, icon_filename))
         
         os.chdir("build")
+
+        class GF3DHandler(http.server.SimpleHTTPRequestHandler):
+            def end_headers(self):
+                self.send_header('Access-Control-Allow-Origin', '*')
+                super().end_headers()
+
+        GF3DHandler.extensions_map.update({
+            '.js': 'application/javascript',
+            '.mjs': 'application/javascript',
+        })
+
         socketserver.TCPServer.allow_reuse_address = True
-        httpd = socketserver.TCPServer(("", port), http.server.SimpleHTTPRequestHandler)
-        
+        httpd = socketserver.TCPServer(("", port), GF3DHandler)
         url = f"http://localhost:{port}"
         
         if use_window:
